@@ -7,6 +7,8 @@ from utils_ds.parser import get_config
 from utils_ds.draw import draw_boxes
 from deep_sort import build_tracker
 
+from yolo_utils import read_class_names
+
 import argparse
 import os
 import time
@@ -15,6 +17,7 @@ import warnings
 import cv2
 import torch
 import torch.backends.cudnn as cudnn
+import math
 
 import sys
 
@@ -51,6 +54,10 @@ class VideoTracker(object):
         # ***************************** initialize DeepSORT **********************************
         cfg = get_config()
         cfg.merge_from_file(args.config_deepsort)
+        cfg.merge_from_file(args.config_yolo)
+
+
+        self.class_names = read_class_names(cfg.YOLO.CLASSES)
 
         use_cuda = self.device.type != 'cpu' and torch.cuda.is_available()
         self.deepsort = build_tracker(cfg, use_cuda=use_cuda)
@@ -124,7 +131,7 @@ class VideoTracker(object):
                 last_out = outputs
                 yolo_time.append(yt)
                 sort_time.append(st)
-                print('Frame %d Done. YOLO-time:(%.3fs) SORT-time:(%.3fs)' % (idx_frame, yt, st))
+                #print('Frame %d Done. YOLO-time:(%.3fs) SORT-time:(%.3fs)' % (idx_frame, yt, st))
             else:
                 outputs = last_out  # directly use prediction in last frames
             t1 = time.time()
@@ -149,15 +156,7 @@ class VideoTracker(object):
                     cv2.destroyAllWindows()
                     break
 
-            # save to video file *****************************
-            if self.args.save_path:
-                self.writer.write(img0)
 
-            if self.args.save_txt:
-                with open(self.args.save_txt + str(idx_frame).zfill(4) + '.txt', 'a') as f:
-                    for i in range(len(outputs)):
-                        x1, y1, x2, y2, idx = outputs[i]
-                        f.write('{}\t{}\t{}\t{}\t{}\n'.format(x1, y1, x2, y2, idx))
 
 
 
@@ -213,10 +212,38 @@ class VideoTracker(object):
 
             bbox_xywh = xyxy2xywh(det[:, :4]).cpu()
             confs = det[:, 4:5].cpu()
+            classes = det[:,-1]
+
+            names = []
+            for x in classes:
+                class_idx = int(x)
+                class_name = self.class_names[class_idx]
+                names.append(class_name)
+
 
             # ****************************** deepsort ****************************
-            outputs = self.deepsort.update(bbox_xywh, confs, im0)
-            # (#ID, 5) x1,y1,x2,y2,track_ID
+            outputs = self.deepsort.update(bbox_xywh, confs, im0,names)
+
+            for t in self.deepsort.tracker.deleted_tracks:
+                #print(t.path)
+
+                if len(t.path) > 1 :
+                    #find distance between two points
+                    #print(t.path[0][0])
+                    start_x,start_y = t.path[0][0],t.path[0][1]
+                    end_x,end_y = t.path[-1][0],t.path[-1][1]
+
+                    dist = math.hypot(end_x - start_x, end_y - start_y)
+
+                    speed = dist/len(t.path)
+
+
+                    #print(dist)
+
+
+                    print(f"{t.get_class()}_{t.track_id}  {len(t.path)} speed: {speed}")
+
+
         else:
             outputs = torch.zeros((0, 5))
 
@@ -229,7 +256,7 @@ if __name__ == '__main__':
     # input and output
     parser.add_argument('--input_path', type=str, default='input_480.mp4', help='source')  # file/folder, 0 for webcam
     parser.add_argument('--save_path', type=str, default='output/', help='output folder')  # output folder
-    parser.add_argument("--frame_interval", type=int, default=2)
+    parser.add_argument("--frame_interval", type=int, default=1)
     parser.add_argument('--fourcc', type=str, default='mp4v', help='output video codec (verify ffmpeg support)')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--save_txt', default='output/predict/', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
@@ -251,6 +278,9 @@ if __name__ == '__main__':
 
     # deepsort parameters
     parser.add_argument("--config_deepsort", type=str, default="./configs/deep_sort.yaml")
+    #YOLO PARAMS
+    parser.add_argument("--config_yolo", type=str, default="./configs/yolov5.yaml")
+
 
     args = parser.parse_args()
     args.img_size = check_img_size(args.img_size)

@@ -80,6 +80,9 @@ class Tracker:
         for detection_idx in unmatched_detections:
             #
             self._initiate_track(detections[detection_idx])
+
+        #out here extracting deleted tracks
+        self.deleted_tracks = [t for t in self.tracks if t.is_deleted()]
         self.tracks = [t for t in self.tracks if not t.is_deleted()]
 
         # Update distance metric.
@@ -156,8 +159,9 @@ class Tracker:
     def _initiate_track(self, detection):
 
         mean, covariance = self.kf.initiate(detection.to_xyah())
+        class_name = detection.get_class()
 
         self.tracks.append(Track(
             mean, covariance, self._next_id, self.n_init, self.max_age,
-            detection.feature)) # for new obj, create a new Track object for it
+            detection.feature,class_name)) # for new obj, create a new Track object for it
         self._next_id += 1
