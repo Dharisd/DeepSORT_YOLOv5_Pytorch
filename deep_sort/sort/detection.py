@@ -26,10 +26,11 @@ class Detection(object):
 
     """
 
-    def __init__(self, tlwh, confidence, feature,class_name=None):
+    def __init__(self, tlwh, confidence,im_crop,feature,class_name=None):
         self.tlwh = np.asarray(tlwh, dtype=np.float)    # x1, y1, w, h
         self.confidence = float(confidence)
         self.feature = np.asarray(feature, dtype=np.float32)
+        self.im_crop = np.asarray(im_crop)
         self.class_name = class_name
 
     def to_tlbr(self):

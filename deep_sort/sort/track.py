@@ -64,7 +64,7 @@ class Track:
     """
 
     def __init__(self, mean, covariance, track_id, n_init, max_age,
-                 feature=None,class_name=None):
+                 feature=None,im_crop=None,class_name=None):
         #
         self.mean = mean
         self.covariance = covariance
@@ -75,8 +75,12 @@ class Track:
 
         self.state = TrackState.Tentative
         self.features = []
+        self.im_crops = []
         if feature is not None:
             self.features.append(feature)
+
+        if im_crop is not None:
+            self.im_crops.append(im_crop)
 
         self._n_init = n_init
         self._max_age = max_age
@@ -141,6 +145,7 @@ class Track:
         self.mean, self.covariance = kf.update(
             self.mean, self.covariance, detection.to_xyah())
         self.features.append(detection.feature)
+        self.im_crops.append(detection.im_crop)
         self.path.append(detection.to_xyah())
 
         self.hits += 1

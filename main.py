@@ -18,6 +18,17 @@ import cv2
 import torch
 import torch.backends.cudnn as cudnn
 import math
+import threading 
+import queue
+import requests
+
+from PIL import Image
+import io
+import base64
+
+
+
+backend_url = "178.128.28.91:8000"
 
 import sys
 
@@ -29,7 +40,7 @@ cudnn.benchmark = True
 
 
 class VideoTracker(object):
-    def __init__(self, args):
+    def __init__(self, args,q):
         print('Initialize DeepSORT & YOLO-V5')
         # ***************** Initialize ******************************************************
         self.args = args
@@ -125,13 +136,14 @@ class VideoTracker(object):
             # Inference *********************************************************************
             t0 = time.time()
             _, img0 = self.vdo.retrieve()
+            img_e = np.copy(img0)
 
             if idx_frame % self.args.frame_interval == 0:
                 outputs, yt, st = self.image_track(img0)        # (#ID, 5) x1,y1,x2,y2,id
                 last_out = outputs
                 yolo_time.append(yt)
                 sort_time.append(st)
-                #print('Frame %d Done. YOLO-time:(%.3fs) SORT-time:(%.3fs)' % (idx_frame, yt, st))
+                print('Frame %d Done. YOLO-time:(%.3fs) SORT-time:(%.3fs)' % (idx_frame, yt, st))
             else:
                 outputs = last_out  # directly use prediction in last frames
             t1 = time.time()
@@ -142,22 +154,19 @@ class VideoTracker(object):
             if len(outputs) > 0:
                 bbox_xyxy = outputs[:, :4]
                 identities = outputs[:, -1]
-                img0 = draw_boxes(img0, bbox_xyxy, identities)  # BGR
+                img_e = draw_boxes(img_e, bbox_xyxy, identities)  # BGR
 
                 # add FPS information on output video
-                text_scale = max(1, img0.shape[1] // 1600)
-                cv2.putText(img0, 'frame: %d fps: %.2f ' % (idx_frame, len(avg_fps) / sum(avg_fps)),
+                text_scale = max(1, img_e.shape[1] // 1600)
+                cv2.putText(img_e, 'frame: %d fps: %.2f ' % (idx_frame, len(avg_fps) / sum(avg_fps)),
                         (20, 20 + text_scale), cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 0, 255), thickness=2)
 
             # display on window ******************************
             if self.args.display:
-                cv2.imshow("test", img0)
+                cv2.imshow("test", img_e)
                 if cv2.waitKey(1) == ord('q'):  # q to quit
                     cv2.destroyAllWindows()
                     break
-
-
-
 
 
             idx_frame += 1
@@ -166,6 +175,9 @@ class VideoTracker(object):
                                                             sum(sort_time)/len(sort_time)))
         t_end = time.time()
         print('Total time (%.3fs), Total Frame: %d' % (t_end - t_start, idx_frame))
+
+
+
 
     def image_track(self, im0):
         """
@@ -223,6 +235,8 @@ class VideoTracker(object):
 
             # ****************************** deepsort ****************************
             outputs = self.deepsort.update(bbox_xywh, confs, im0,names)
+            
+
 
             for t in self.deepsort.tracker.deleted_tracks:
                 #print(t.path)
@@ -237,11 +251,32 @@ class VideoTracker(object):
 
                     speed = dist/len(t.path)
 
+                    """"
+                    when confirmed set the image in the detction too 
+                    """
+                    # get the largest dectetion
+                    middle_idx = (len(t.im_crops) - 1)//2
 
-                    #print(dist)
+                    mid_img_crop = t.im_crops[middle_idx]
+                    #cv2.imshow("bruh", mid_img_crop)
+
+                    #convert to img 
+                    im = Image.fromarray(mid_img_crop)
+                    image_bytes = io.BytesIO()
+                    im.save(image_bytes,format="JPEG")
+                    img_data = base64.b64encode(image_bytes.getvalue()).decode()
 
 
-                    print(f"{t.get_class()}_{t.track_id}  {len(t.path)} speed: {speed}")
+                    out_data= {
+                        "type":t.get_class(),
+                        "speed":speed,
+                        "timestamp": time.time(),
+                        "img_data":img_data
+                    }
+
+                    out_text = f"{t.get_class()}_{t.track_id}  {len(t.path)} speed: {speed}"
+                    print(out_text)
+                    q.put(out_data)
 
 
         else:
@@ -286,6 +321,24 @@ if __name__ == '__main__':
     args.img_size = check_img_size(args.img_size)
     print(args)
 
-    with VideoTracker(args) as vdo_trk:
+
+
+    q = queue.Queue()
+
+    def worker():
+        while True:
+            data = q.get()
+
+            requests.post(f"http://{backend_url}/store-pass", json=data)
+            
+            print(f'Working on {data}')
+            print(f'Finished {data}')
+            q.task_done()
+
+    #start the thread 
+    #less go
+    threading.Thread(target=worker, daemon=True).start()
+
+    with VideoTracker(args,q) as vdo_trk:
         vdo_trk.run()
 

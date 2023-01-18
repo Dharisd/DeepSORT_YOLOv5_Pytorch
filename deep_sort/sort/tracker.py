@@ -37,7 +37,7 @@ class Tracker:
 
     """
 
-    def __init__(self, metric, max_iou_distance=0.7, max_age=70, n_init=3):
+    def __init__(self, metric, max_iou_distance=0.7, max_age=30, n_init=3):
         self.metric = metric
         self.max_iou_distance = max_iou_distance
         self.max_age = max_age
@@ -163,5 +163,5 @@ class Tracker:
 
         self.tracks.append(Track(
             mean, covariance, self._next_id, self.n_init, self.max_age,
-            detection.feature,class_name)) # for new obj, create a new Track object for it
+            detection.feature,detection.im_crop,class_name)) # for new obj, create a new Track object for it
         self._next_id += 1

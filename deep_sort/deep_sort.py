@@ -34,12 +34,15 @@ class DeepSort(object):
         # get appearance feature with neural network (Deep) *********************************************************
         features = self._get_features(bbox_xywh, ori_img)
 
+        #get crops of the detcted bboxes
+        im_crops = self._get_im_crops(bbox_xywh, ori_img)
+
         bbox_tlwh = self._xywh_to_tlwh(bbox_xywh)   # # [cx,cy,w,h] -> [x1,y1,w,h]   top left
 
         #  generate detections class object for each person *********************************************************
         # filter object with less confidence
         # each Detection obj maintain the location(bbox_tlwh), confidence(conf), and appearance feature
-        detections = [Detection(bbox_tlwh[i], conf, features[i],classes[i]) for i,conf in enumerate(confidences) if conf>self.min_confidence]
+        detections = [Detection(bbox_tlwh[i], conf, im_crops[i],features[i],classes[i]) for i,conf in enumerate(confidences) if conf>self.min_confidence]
 
         # run on non-maximum supression (useless) *******************************************************************
         boxes = np.array([d.tlwh for d in detections])
@@ -127,5 +130,15 @@ class DeepSort(object):
         else:
             features = np.array([])
         return features
+
+
+    def _get_im_crops(self, bbox_xywh, ori_img):
+        im_crops = []
+        for box in bbox_xywh:
+            x1,y1,x2,y2 = self._xywh_to_xyxy(box)
+            im = ori_img[y1:y2,x1:x2]
+            im_crops.append(im)
+
+        return im_crops
 
 
