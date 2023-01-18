@@ -1,5 +1,10 @@
 # DeepSORT_YOLOv5_Pytorch
 
+This fork is modded to send track data to HTTP API endpoint when a  track is about to be deleted.
+
+Used for https://dharisd.github.io/posts/vehicle-monitor/
+
+
 ## Prepare 
 1 Create a virtual environment with Python >=3.8  
 ~~~
